@@ -1,0 +1,19 @@
+meta {
+  name: Search Stocks
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks
+  body: none
+  auth: none
+}
+
+params {
+  param ~q: 平安
+  param ~market:
+  param ~industry:
+  param ~page: 1
+  param ~page_size: 20
+}
