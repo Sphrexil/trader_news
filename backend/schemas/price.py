@@ -29,7 +29,7 @@ class Quote(BaseModel):
 class KlineItem(BaseModel):
     """单条K线数据。"""
 
-    date: date
+    date: str
     open: float | None = None
     high: float | None = None
     low: float | None = None

@@ -1,9 +1,11 @@
 """告警规则路由。"""
 
+import logging
 import time
 from datetime import datetime
 
 import pytz
+import requests
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,52 @@ from services.data_service import AlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 CN_TZ = pytz.timezone("Asia/Shanghai")
+logger = logging.getLogger(__name__)
+
+
+def _send_push(rule: dict) -> tuple[bool, str]:
+    """发送推送通知。支持 Bark / Email / Webhook。"""
+    channel = rule.get("channel", "bark")
+    cfg = rule.get("channel_cfg", {})
+
+    if channel == "bark":
+        bark_key = cfg.get("bark_key", "") or cfg.get("key", "")
+        if not bark_key:
+            return False, "Bark key 未配置"
+        try:
+            title = f"告警: {rule.get('stock_name', rule.get('ts_code', ''))}"
+            body = (
+                f"规则: {rule.get('rule_type')} {rule.get('direction')} {rule.get('threshold')}\n"
+                f"股票: {rule.get('ts_code')}"
+            )
+            url = f"https://api.day.app/{bark_key}/{title}/{body}"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                return True, "Bark推送发送成功"
+            return False, f"Bark返回 {r.status_code}"
+        except Exception as e:
+            return False, f"Bark推送失败: {e}"
+
+    elif channel == "email":
+        return False, "Email 推送暂未实现（需配置 SMTP）"
+
+    elif channel == "webhook":
+        webhook_url = cfg.get("url", "")
+        if not webhook_url:
+            return False, "Webhook URL 未配置"
+        try:
+            payload = {
+                "title": f"告警: {rule.get('ts_code')}",
+                "rule_type": rule.get("rule_type"),
+                "threshold": rule.get("threshold"),
+                "direction": rule.get("direction"),
+            }
+            r = requests.post(webhook_url, json=payload, timeout=10)
+            return r.status_code < 400, f"Webhook返回 {r.status_code}"
+        except Exception as e:
+            return False, f"Webhook推送失败: {e}"
+
+    return False, f"不支持的推送渠道: {channel}"
 
 
 @router.get("", response_model=ApiResponse[AlertRuleList])
@@ -70,11 +118,12 @@ def test_alert(alert_id: int, db: Session = Depends(get_db)):
     if not rule:
         return ApiResponse(code=1002, message=f"告警规则不存在: {alert_id}", ts=int(time.time() * 1000))
 
-    # TODO: 实际调用推送通道（Bark/Email/Webhook）
+    # 实际推送
+    success, msg = _send_push(rule)
     return ApiResponse(
         data=AlertTestResult(
-            success=True,
-            message=f"推送测试成功 (channel={rule["channel"]})",
+            success=success,
+            message=msg,
             sent_at=datetime.now(CN_TZ),
         ),
         ts=int(time.time() * 1000),

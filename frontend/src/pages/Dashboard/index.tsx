@@ -9,7 +9,7 @@ import { SectorList } from "./SectorList";
 export function Dashboard() {
   const { data: overview, isLoading: overviewLoading } = useMarketOverview();
   const { data: sectorsData, isLoading: sectorsLoading } = useSectors("industry");
-  const { data: newsData, isLoading: newsLoading } = useNews({ page_size: 10 });
+  const { data: newsData, isLoading: newsLoading } = useNews({ page_size: 30 });
 
   return (
     <div className="p-6 space-y-6">
@@ -23,7 +23,7 @@ export function Dashboard() {
         <div className="lg:col-span-2">
           <SectorList sectors={sectorsData?.items} isLoading={sectorsLoading} />
         </div>
-        <div>
+        <div className="lg:row-span-1" style={{ maxHeight: "calc(100vh - 280px)" }}>
           <NewsFeed news={newsData?.list} isLoading={newsLoading} />
         </div>
       </div>

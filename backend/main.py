@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import init_db
-from routers import alerts, market, news, stocks, stocks_extra, system, watchlist
+from routers import alerts, market, news, predict, stocks, stocks_extra, system, watchlist
 from scheduler import shutdown_scheduler, start_scheduler
 
 # 日志
@@ -65,6 +65,7 @@ app.include_router(stocks.router, prefix=api_prefix)
 app.include_router(stocks_extra.router, prefix=api_prefix)
 app.include_router(market.router, prefix=api_prefix)
 app.include_router(news.router, prefix=api_prefix)
+app.include_router(predict.router, prefix=api_prefix)
 app.include_router(watchlist.router, prefix=api_prefix)
 app.include_router(alerts.router, prefix=api_prefix)
 app.include_router(system.router, prefix=api_prefix)

@@ -39,7 +39,7 @@ class SinaDataSource(BaseDataSource):
     """
 
     name = "sina"
-    priority = 1
+    priority = 0  # 最高优先 — 含市值/换手率完整数据
 
     BASE_URL = "http://hq.sinajs.cn/list="
     HEADERS = {"Referer": "https://finance.sina.com.cn"}
@@ -89,32 +89,80 @@ class SinaDataSource(BaseDataSource):
         return results
 
     def fetch_stock_quote(self, ts_code: str) -> StockQuote | None:
-        code = self._to_sina_stock_code(ts_code)
-        if not code:
-            return None
+        """获取个股实时行情（含市值/换手率）。新浪市场中心为主源。"""
+        import json
 
-        url = self.BASE_URL + code
+        symbol = ts_code.split(".")[0]
+        code_only = symbol
+        sina_code = f"sh{code_only}" if ts_code.endswith(".SH") else f"sz{code_only}"
+
+        # 1. 新浪市场中心（完整数据: 价格/量/额/市值/换手率/PE/PB）
+        # 注意：symbol参数是分页起点不是过滤，需本地筛选
         try:
-            r = requests.get(url, headers=self.HEADERS, timeout=10)
+            mkt_url = (
+                "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+                "Market_Center.getHQNodeData"
+            )
+            # 用相近代码作分页起点，仅拉取小范围数据
+            start_sym = str(int(code_only) - 10) if code_only.isdigit() else code_only
+            params = {
+                "page": 1, "num": 30, "sort": "symbol", "asc": 1,
+                "node": "hs_a", "symbol": start_sym,
+            }
+            r = requests.get(mkt_url, params=params, headers=self.HEADERS, timeout=10)
+            all_items = json.loads(r.text)
+            # 本地按代码筛选
+            code_lower = code_only.lower()
+            item = None
+            for it in all_items:
+                if str(it.get("code", "")) == code_only or str(it.get("symbol", "")) == sina_code:
+                    item = it
+                    break
+            if item:
+                price = float(item.get("trade", 0))
+                pre_close = float(item.get("settlement", price))
+                t_rate = item.get("turnoverratio")
+                return StockQuote(
+                    ts_code=ts_code,
+                    name=item.get("name", ts_code),
+                    price=price,
+                    pre_close=pre_close,
+                    pct_chg=float(item.get("changepercent", 0)),
+                    change=float(item.get("pricechange", 0)),
+                    open=float(item.get("open", price)),
+                    high=float(item.get("high", price)),
+                    low=float(item.get("low", price)),
+                    vol=float(item.get("volume", 0)),
+                    amount=float(item.get("amount", 0)) * 10000,  # 万元→元
+                    turnover_rate=float(t_rate) if t_rate and t_rate != "0.00000" else None,
+                    total_mv=float(item["mktcap"]) if item.get("mktcap") else None,
+                    circ_mv=float(item["nmc"]) if item.get("nmc") else None,
+                )
+        except (requests.RequestException, json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+        # 2. 降级：新浪基础行情接口（无市值/换手率）
+        url = self.BASE_URL + sina_code
+        try:
+            r = requests.get(url, headers=self.HEADERS, timeout=5)
             if r.status_code != 200:
                 raise DataSourceError(f"Sina HTTP {r.status_code}")
         except requests.RequestException as e:
             raise DataSourceError(f"Sina unavailable: {e}") from e
 
-        data = self._parse_sina_line(r.text, code)
+        data = self._parse_sina_line(r.text, sina_code)
         if not data or len(data) < 10:
             return None
 
-        # 新浪个股格式:
-        # 0:name 1:open 2:pre_close 3:price 4:high 5:low
-        # 8:vol(手) 9:amount(万) ...
+        price = float(data[3])
+        pre_close = float(data[2])
         return StockQuote(
             ts_code=ts_code,
             name=data[0],
-            price=float(data[3]),
-            pre_close=float(data[2]),
-            pct_chg=round((float(data[3]) - float(data[2])) / float(data[2]) * 100, 4),
-            change=round(float(data[3]) - float(data[2]), 3),
+            price=price,
+            pre_close=pre_close,
+            pct_chg=round((price - pre_close) / pre_close * 100, 4) if pre_close else 0,
+            change=round(price - pre_close, 3),
             open=float(data[1]),
             high=float(data[4]),
             low=float(data[5]),
@@ -153,6 +201,50 @@ class SinaDataSource(BaseDataSource):
             ]
         except Exception as e:
             raise DataSourceError(f"Sina news failed: {e}") from e
+
+    def fetch_daily_prices(
+        self, ts_code: str, start_date: str, end_date: str
+    ) -> list[dict[str, Any]]:
+        """通过新浪 K 线 API 获取日线数据。"""
+        import json
+
+        sina_code = self._to_sina_stock_code(ts_code)
+        if not sina_code:
+            raise DataSourceError(f"Invalid stock code: {ts_code}")
+
+        try:
+            url = (
+                "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+                f"CN_MarketData.getKLineData?symbol={sina_code}&scale=240&ma=no&datalen=200"
+            )
+            r = requests.get(url, headers=self.HEADERS, timeout=10)
+            if r.status_code != 200 or not r.text:
+                raise DataSourceError(f"Sina K-line HTTP {r.status_code}")
+
+            raw = json.loads(r.text)
+            if not raw or not isinstance(raw, list):
+                raise DataSourceError("Sina K-line returned empty")
+
+            items = []
+            for point in raw:
+                d = point.get("day", "")
+                if d < start_date.replace("-", "") or d > end_date.replace("-", ""):
+                    continue
+                items.append({
+                    "date": f"{d[:4]}-{d[4:6]}-{d[6:8]}",
+                    "open": float(point.get("open", 0)),
+                    "high": float(point.get("high", 0)),
+                    "low": float(point.get("low", 0)),
+                    "close": float(point.get("close", 0)),
+                    "volume": float(point.get("volume", 0)),
+                    "amount": None,
+                    "turnover_rate": None,
+                })
+            if not items:
+                raise DataSourceError("Sina K-line: no data in range")
+            return items
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
+            raise DataSourceError(f"Sina K-line failed: {e}") from e
 
     @staticmethod
     def _parse_sina_line(text: str, code: str) -> list[str] | None:

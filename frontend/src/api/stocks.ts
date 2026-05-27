@@ -25,4 +25,9 @@ export const stocksApi = {
 
   getAnnouncements: (tsCode: string, params: Record<string, unknown>) =>
     client.get<PaginatedData<AnnouncementItem>>(`/stocks/${tsCode}/announcements`, { params }),
+
+  predict: (tsCode: string, days: number = 5) =>
+    client.get<{ predictions: Array<{ day: number; date: string; open: number; high: number; low: number; close: number }>; model: string }>(
+      `/stocks/${tsCode}/predict?days=${days}`
+    ),
 };

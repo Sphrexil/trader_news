@@ -10,6 +10,7 @@ from typing import Any
 
 from cache import get_cache
 from datasources.base import BaseDataSource, DataSourceError, IndexData, StockQuote
+from datasources.easyquotation_source import EasyQuotationSource
 from datasources.sina_source import SinaDataSource
 from datasources.baostock_source import BaoStockSource
 from datasources.akshare_source import AKShareSource
@@ -25,6 +26,7 @@ class DataSourceManager:
 
     def __init__(self):
         self.sources: list[BaseDataSource] = [
+            EasyQuotationSource(),
             SinaDataSource(),
             BaoStockSource(),
             AKShareSource(),
@@ -149,6 +151,20 @@ class DataSourceManager:
             result = self._try_sources("fetch_sectors")
             if result:
                 self._cache.set(cache_key, result, ttl)
+            return result or []
+        except DataSourceError:
+            return []
+
+    def get_minute_kline(self, ts_code: str, freq: str = "1") -> list[dict]:
+        """获取分钟K线（腾讯数据源）。freq: 1/5/15/30/60"""
+        cache_key = f"ds:minute:{ts_code}:{freq}"
+        cached = self._cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            result = self._try_sources("fetch_minute_kline", ts_code, freq)
+            if result:
+                self._cache.set(cache_key, result, 60)
             return result or []
         except DataSourceError:
             return []

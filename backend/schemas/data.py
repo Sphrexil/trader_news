@@ -61,6 +61,11 @@ class NewsItem(BaseModel):
     pub_time: datetime
     related_codes: list[str] | None = None
     sentiment: float | None = None
+    sentiment_label: str = "中性"
+    relevance: float = 0.0
+    hot_score: float = 0.0
+    positive_matches: list[str] = []
+    negative_matches: list[str] = []
 
     model_config = {"from_attributes": True}
 

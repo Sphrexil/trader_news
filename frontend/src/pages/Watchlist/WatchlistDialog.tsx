@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { WatchlistCreate, WatchlistStock, WatchlistUpdate } from "@/types/models";
+import type { WatchlistCreate, WatchlistStock } from "@/types/models";
 
 interface Props {
   open: boolean;
@@ -14,10 +14,26 @@ interface Props {
 }
 
 export function WatchlistDialog({ open, onClose, onSubmit, mode, initial }: Props) {
-  const [tsCode, setTsCode] = useState(initial?.ts_code ?? "");
+  const [tsCode, setTsCode] = useState("");
   const [groupName, setGroupName] = useState("默认");
-  const [costPrice, setCostPrice] = useState(initial?.cost_price?.toString() ?? "");
-  const [note, setNote] = useState(initial?.note ?? "");
+  const [costPrice, setCostPrice] = useState("");
+  const [note, setNote] = useState("");
+
+  // 打开时从 initial 同步数据
+  useEffect(() => {
+    if (!open) return;
+    if (mode === "edit" && initial) {
+      setTsCode(initial.ts_code);
+      setGroupName(""); // 编辑时不预填分组，由用户选择
+      setCostPrice(initial.cost_price?.toString() ?? "");
+      setNote(initial.note ?? "");
+    } else {
+      setTsCode("");
+      setGroupName("默认");
+      setCostPrice("");
+      setNote("");
+    }
+  }, [open, mode, initial]);
 
   const handleSubmit = () => {
     if (!tsCode.trim()) return;
@@ -27,25 +43,14 @@ export function WatchlistDialog({ open, onClose, onSubmit, mode, initial }: Prop
       cost_price: costPrice ? parseFloat(costPrice) : undefined,
       note: note || undefined,
     });
-    reset();
-    onClose();
-  };
-
-  const reset = () => {
-    if (mode === "add") {
-      setTsCode("");
-      setGroupName("默认");
-      setCostPrice("");
-      setNote("");
-    }
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={reset}>
+    <Dialog open={open} onClose={onClose}>
       <DialogHeader>
         <DialogTitle>{mode === "add" ? "添加自选股" : "编辑自选股"}</DialogTitle>
-        <DialogClose onClick={reset} />
+        <DialogClose onClick={onClose} />
       </DialogHeader>
       <div className="space-y-4 mt-4">
         <div className="space-y-2">
@@ -88,7 +93,7 @@ export function WatchlistDialog({ open, onClose, onSubmit, mode, initial }: Prop
           />
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={reset}>取消</Button>
+          <Button variant="outline" onClick={onClose}>取消</Button>
           <Button onClick={handleSubmit}>{mode === "add" ? "添加" : "保存"}</Button>
         </div>
       </div>

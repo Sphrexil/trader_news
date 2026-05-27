@@ -30,12 +30,8 @@ class BaoStockSource(BaseDataSource):
 
     def is_available(self) -> bool:
         try:
-            import baostock as bs
-            lg = bs.login()
-            if lg.error_code == "0":
-                bs.logout()
-                return True
-            return False
+            import baostock
+            return True
         except ImportError:
             return False
 
@@ -50,8 +46,11 @@ class BaoStockSource(BaseDataSource):
 
     def _logout(self):
         if self._logged_in:
-            import baostock as bs
-            bs.logout()
+            try:
+                import baostock as bs
+                bs.logout()
+            except Exception:
+                pass
             self._logged_in = False
 
     def fetch_index_daily(

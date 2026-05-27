@@ -50,6 +50,20 @@ class PriceService:
         if not stock:
             return None
 
+        # 懒加载总股本（cninfo接口，首次查询时写入DB）
+        if stock.total_share is None:
+            try:
+                symbol = ts_code.split(".")[0]
+                import akshare as ak
+                df = ak.stock_profile_cninfo(symbol=symbol)
+                cols = list(df.columns)
+                cap = float(df.iloc[0][cols[13]]) if df.iloc[0][cols[13]] else None
+                if cap:
+                    stock.total_share = cap
+                    self.db.commit()
+            except Exception:
+                pass
+
         # 尝试从 Redis 读取实时行情
         rt_key = f"rt:quote:{ts_code}"
         cached = cache.get(rt_key)
@@ -116,6 +130,12 @@ class PriceService:
             circ_mv = ds_quote.circ_mv
             qt = datetime.now(CN_TZ)
 
+        # 市值数据源未提供 → 用总股本×股价推算
+        if total_mv is None and price and stock.total_share:
+            total_mv = round(float(stock.total_share) * price, 2)
+        if circ_mv is None and price and stock.float_share:
+            circ_mv = round(float(stock.float_share) * price, 2)
+
         return {
             "ts_code": ts_code,
             "name": stock.name,
@@ -146,10 +166,42 @@ class PriceService:
     ) -> dict | None:
         """获取 K 线历史数据。
 
-        DB优先，轮动数据源补充缺失日期 → 合并去重。
+        daily/weekly/monthly: DB优先 + 轮动数据源补充
+        1min/5min/15min/30min/60min: 轮动数据源(腾讯分时)
         """
-        if period != "daily":
-            period = "daily"
+        # 分钟K线 → 直接走数据源
+        if period in ("1", "5", "15", "30", "60", "1min", "5min", "15min", "30min", "60min"):
+            freq = period.replace("min", "")
+            try:
+                ds = get_ds_manager()
+                rows = ds.get_minute_kline(ts_code, freq)
+                items = []
+                for r in rows[-limit:]:
+                    items.append({
+                        "date": r.get("time", ""),
+                        "time": r.get("time", ""),
+                        "open": r.get("open"),
+                        "high": r.get("high"),
+                        "low": r.get("low"),
+                        "close": r.get("close"),
+                        "vol": r.get("vol"),
+                        "amount": None,
+                        "pct_chg": None,
+                        "turnover_rate": None,
+                        "total_mv": None,
+                    })
+                return {
+                    "ts_code": ts_code,
+                    "period": f"{freq}min",
+                    "adjust": "qfq",
+                    "items": items,
+                    "count": len(items),
+                }
+            except Exception:
+                return {
+                    "ts_code": ts_code, "period": f"{freq}min", "adjust": "qfq",
+                    "items": [], "count": 0,
+                }
 
         dates_seen: set[str] = set()
         items: list[dict] = []
@@ -169,7 +221,7 @@ class PriceService:
             d = str(r.trade_date) if hasattr(r.trade_date, "isoformat") else str(r.trade_date)
             dates_seen.add(d)
             items.append({
-                "date": r.trade_date,
+                "date": str(r.trade_date),
                 "open": float(r.open) if r.open else None,
                 "high": float(r.high) if r.high else None,
                 "low": float(r.low) if r.low else None,
@@ -205,6 +257,29 @@ class PriceService:
                     })
         except Exception:
             pass
+
+        # 日K：附加上实时行情作为今天未完成K线
+        if period == "daily":
+            try:
+                today_str = date.today().isoformat()
+                if today_str not in dates_seen:
+                    ds = get_ds_manager()
+                    q = ds.get_stock_quote(ts_code)
+                    if q and q.price:
+                        items.append({
+                            "date": today_str,
+                            "open": q.open if q.open else q.price,
+                            "high": q.high if q.high else q.price,
+                            "low": q.low if q.low else q.price,
+                            "close": q.price,
+                            "vol": q.vol,
+                            "amount": q.amount,
+                            "pct_chg": q.pct_chg,
+                            "turnover_rate": q.turnover_rate,
+                            "total_mv": q.total_mv,
+                        })
+            except Exception:
+                pass
 
         # 排序，取最近 limit 条
         items.sort(key=lambda x: str(x["date"]))

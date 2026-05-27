@@ -205,6 +205,38 @@ class AKShareSource(BaseDataSource):
         except Exception as e:
             raise DataSourceError(f"EastMoney announcements failed: {e}") from e
 
+    def fetch_minute_kline(self, ts_code: str, freq: str = "1") -> list[dict]:
+        """获取分钟K线（腾讯数据源）。freq: 1/5/15/30/60"""
+        try:
+            import akshare as ak
+            prefix = "sh" if ts_code.endswith(".SH") else "sz"
+            symbol_raw = ts_code.split(".")[0]
+            symbol = f"{prefix}{symbol_raw}"
+
+            df = ak.stock_zh_a_minute(symbol=symbol, period=freq)
+            if df.empty:
+                raise DataSourceError(f"Tencent minute kline empty for {ts_code}")
+
+            cols = list(df.columns)
+            items = []
+            for _, row in df.iterrows():
+                vals = [row[c] for c in cols]
+                items.append({
+                    "time": str(vals[0]),
+                    "open": float(vals[1]) if vals[1] else None,
+                    "high": float(vals[2]) if vals[2] else None,
+                    "low": float(vals[3]) if vals[3] else None,
+                    "close": float(vals[4]) if vals[4] else None,
+                    "vol": float(vals[5]) if len(vals) > 5 and vals[5] else 0,
+                })
+            return items
+        except ImportError:
+            raise DataSourceError("akshare not installed")
+        except DataSourceError:
+            raise
+        except Exception as e:
+            raise DataSourceError(f"Tencent minute kline failed: {e}") from e
+
     def fetch_stock_list(self) -> list[dict]:
         """获取全量 A 股股票列表。"""
         try:
