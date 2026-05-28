@@ -1,0 +1,17 @@
+meta {
+  name: K-Line Data
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks/{{ts_code}}/kline
+  body: none
+  auth: none
+}
+
+params {
+  param ~period: daily
+  param ~adjust: qfq
+  param ~limit: 100
+}

@@ -1,0 +1,11 @@
+meta {
+  name: Stock Detail
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks/{{ts_code}}
+  body: none
+  auth: none
+}

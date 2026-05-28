@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+*.py[cod]
 *.egg-info/
 dist/
 .venv/
@@ -15,17 +16,18 @@ frontend/dist/
 *.db
 *.db-journal
 
+# Env
+.env
+.env.local
+
 # IDE
 .vscode/
 .idea/
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Env
-.env
-.env.local
 
 # Logs
 *.log

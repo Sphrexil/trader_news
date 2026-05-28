@@ -1,0 +1,11 @@
+meta {
+  name: Stock Quote
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks/{{ts_code}}/quote
+  body: none
+  auth: none
+}

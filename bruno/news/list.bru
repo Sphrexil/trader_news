@@ -1,0 +1,18 @@
+meta {
+  name: News List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/news
+  body: none
+  auth: none
+}
+
+params {
+  param ~ts_code:
+  param ~source:
+  param ~page: 1
+  param ~page_size: 20
+}

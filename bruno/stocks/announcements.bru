@@ -1,0 +1,17 @@
+meta {
+  name: Stock Announcements
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks/{{ts_code}}/announcements
+  body: none
+  auth: none
+}
+
+params {
+  param ~ann_type:
+  param ~page: 1
+  param ~page_size: 20
+}

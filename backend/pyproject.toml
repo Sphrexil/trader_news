@@ -1,0 +1,10 @@
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["akshare", "apscheduler.*", "redis.*"]
+ignore_missing_imports = true
