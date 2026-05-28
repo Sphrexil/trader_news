@@ -1,0 +1,47 @@
+# Auto-detect text files and normalize to LF
+* text=auto
+
+# Explicitly declare text files (normalize line endings)
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.xml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.env text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+Makefile text eol=lf
+*.mk text eol=lf
+
+# Binary files (no line-ending conversion)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.db binary
+*.sqlite3 binary
+
+# Shell scripts always executable
+*.sh text eol=lf working-tree-encoding=UTF-8
+
+# Windows batch files stay CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf

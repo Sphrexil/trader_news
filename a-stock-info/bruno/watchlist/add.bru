@@ -1,0 +1,20 @@
+meta {
+  name: Add to Watchlist
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/watchlist
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ts_code": "600000.SH",
+    "group_name": "默认",
+    "note": "",
+    "cost_price": 0
+  }
+}

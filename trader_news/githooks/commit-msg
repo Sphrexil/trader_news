@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# ============================================================
+# commit-msg — Enforce Conventional Commits format.
+#
+# Allowed patterns:
+#   feat:       new feature
+#   fix:        bug fix
+#   docs:       documentation
+#   style:      formatting, no code change
+#   refactor:   code change, no feature/fix
+#   perf:       performance improvement
+#   test:       tests
+#   chore:      build, CI, deps
+#   revert:     reverts a previous commit
+#   ci:         CI/CD changes
+#   build:      build system changes
+#
+# Examples:
+#   feat: add real-time news polling
+#   fix: resolve empty state flash on load
+#   refactor(crawler): extract retry logic into decorator
+#   chore(deps): bump akshare to 1.14.0
+# ============================================================
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip merge and rebase commits
+if echo "$COMMIT_MSG" | grep -qE '^(Merge|Revert)'; then
+  exit 0
+fi
+
+# Conventional Commits regex
+PATTERN='^(feat|fix|docs|style|refactor|perf|test|chore|revert|ci|build)(\(.+\))?!?: .{1,100}$'
+
+if ! echo "$COMMIT_MSG" | head -1 | grep -qE "$PATTERN"; then
+  echo "============================================================"
+  echo " ERROR: Commit message does not follow Conventional Commits."
+  echo "============================================================"
+  echo ""
+  echo "Format: <type>[(scope)][!]: <description>"
+  echo ""
+  echo "Types: feat, fix, docs, style, refactor, perf, test, chore,"
+  echo "       revert, ci, build"
+  echo ""
+  echo "Examples:"
+  echo "  feat: add news filtering by source"
+  echo "  fix(crawler): handle empty response gracefully"
+  echo "  refactor!: drop Python 3.9 support"
+  echo "  chore(deps): update requests to 2.32.0"
+  echo ""
+  exit 1
+fi

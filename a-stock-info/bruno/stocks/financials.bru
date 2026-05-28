@@ -1,0 +1,16 @@
+meta {
+  name: Stock Financials
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/stocks/{{ts_code}}/financials
+  body: none
+  auth: none
+}
+
+params {
+  param ~report_type: Q
+  param ~limit: 12
+}

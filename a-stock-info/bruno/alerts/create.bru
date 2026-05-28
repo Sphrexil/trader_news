@@ -1,0 +1,22 @@
+meta {
+  name: Create Alert
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/alerts
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ts_code": "600000.SH",
+    "rule_type": "price_pct",
+    "threshold": 5.0,
+    "direction": "above",
+    "channel": "bark",
+    "channel_cfg": {"bark_key": "your-key"}
+  }
+}

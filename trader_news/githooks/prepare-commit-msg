@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# ============================================================
+# prepare-commit-msg — Add a template when starting a commit.
+# ============================================================
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+
+# Only add template for new commits (not merge/squash/template)
+if [ "$COMMIT_SOURCE" = "message" ] || [ "$COMMIT_SOURCE" = "template" ]; then
+  exit 0
+fi
+
+# Append template below the initial message
+cat >> "$COMMIT_MSG_FILE" << 'EOF'
+
+# ── Conventional Commits ─────────────────────────────────
+# <type>[(scope)][!]: <short description>
+#
+# Types: feat | fix | docs | style | refactor | perf | test
+#        chore | revert | ci | build
+#
+# Breaking change: add ! after type/scope, e.g.: feat!: ...
+# Reference issues: Closes #123
+# ─────────────────────────────────────────────────────────
+EOF

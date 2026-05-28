@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# ============================================================
+# pre-commit — Run linters on staged files before committing.
+# ============================================================
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Only proceed if there are staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+if [ -z "$STAGED_FILES" ]; then
+  exit 0
+fi
+
+HAS_ERROR=false
+
+# ── Python ──────────────────────────────────────────────
+PY_FILES=$(echo "$STAGED_FILES" | grep '\.py$' || true)
+if [ -n "$PY_FILES" ] && command -v ruff &>/dev/null; then
+  echo -e "${YELLOW}[pre-commit] Ruff check...${NC}"
+  echo "$PY_FILES" | xargs ruff check --fix 2>&1 || HAS_ERROR=true
+  echo "$PY_FILES" | xargs ruff format --check 2>&1 || HAS_ERROR=true
+
+  if [ "$HAS_ERROR" = false ]; then
+    echo -e "${GREEN}[pre-commit] Python OK${NC}"
+  fi
+fi
+
+# ── TypeScript / JavaScript ─────────────────────────────
+JS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [ -n "$JS_FILES" ] && command -v npx &>/dev/null; then
+  echo -e "${YELLOW}[pre-commit] ESLint + Prettier check...${NC}"
+  echo "$JS_FILES" | xargs npx eslint --max-warnings 0 2>&1 || HAS_ERROR=true
+  echo "$JS_FILES" | xargs npx prettier --check 2>&1 || HAS_ERROR=true
+
+  if [ "$HAS_ERROR" = false ]; then
+    echo -e "${GREEN}[pre-commit] TypeScript OK${NC}"
+  fi
+fi
+
+# ── Result ──────────────────────────────────────────────
+if [ "$HAS_ERROR" = true ]; then
+  echo -e "${RED}[pre-commit] Commit blocked. Fix errors above and re-stage.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}[pre-commit] All checks passed.${NC}"
+exit 0
