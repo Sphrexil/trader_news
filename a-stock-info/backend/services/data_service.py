@@ -156,6 +156,10 @@ class NewsService:
                 "pub_time": r.pub_time.isoformat() if r.pub_time else None,
                 "related_codes": related_codes,
                 "sentiment": float(r.sentiment) if r.sentiment else None,
+                "summary": r.summary,
+                "impact_sectors": r.impact_sectors,
+                "impact_level": r.impact_level,
+                "is_breaking": r.is_breaking,
             })
 
         return items, total

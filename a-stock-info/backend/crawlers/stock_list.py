@@ -1,6 +1,7 @@
 """股票列表采集器（全量元数据同步）。"""
 
 import logging
+import time
 
 from sqlalchemy.orm import Session
 

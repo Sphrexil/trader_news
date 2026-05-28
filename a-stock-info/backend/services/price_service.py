@@ -51,33 +51,28 @@ class PriceService:
         if not stock:
             return None
 
-        # 懒加载总股本 + 流通股本（AKShare individual_info，首次查询时写入DB）
+        # 懒加载总股本 + 流通股本（多API兜底，首次查询时写入DB）
         if stock.total_share is None or stock.float_share is None:
-            try:
-                symbol = ts_code.split(".")[0]
-                import akshare as ak
-                # stock_individual_info_em 返回 item/value 两列，列名固定
-                df = ak.stock_individual_info_em(symbol=symbol)
-                info = {}
-                for _, row in df.iterrows():
-                    info[str(row["item"]).strip()] = str(row["value"]).strip()
-                if stock.total_share is None:
-                    cap = info.get("总股本")
-                    if cap:
-                        try:
-                            stock.total_share = float(cap.replace(",", "")) / 10000  # 股→万股
-                        except (ValueError, TypeError):
-                            pass
-                if stock.float_share is None:
-                    fl = info.get("流通股")
-                    if fl:
-                        try:
-                            stock.float_share = float(fl.replace(",", "")) / 10000  # 股→万股
-                        except (ValueError, TypeError):
-                            pass
-                self.db.commit()
-            except Exception:
-                pass
+            symbol = ts_code.split(".")[0]
+            market = ts_code.split(".")[1].lower() if "." in ts_code else "sh"
+            # API1: Sina 市场中心（最稳定）→ API2: AKShare em → API3: cninfo
+            for api_fn, kwargs in [
+                (_fetch_shares_sina, {"symbol": symbol, "market": market}),
+                (_fetch_shares_em, {"symbol": symbol}),
+                (_fetch_shares_cninfo, {"symbol": symbol}),
+            ]:
+                try:
+                    total, fl = api_fn(**kwargs)
+                    if total and stock.total_share is None:
+                        stock.total_share = total
+                    if fl and stock.float_share is None:
+                        stock.float_share = fl
+                    if total or fl:
+                        self.db.flush()
+                        self.db.commit()
+                        break
+                except Exception:
+                    continue
 
         # ── 路径1: Redis 缓存 ──
         rt_key = f"rt:quote:{ts_code}"
@@ -456,7 +451,16 @@ class PriceService:
             )
 
             if not latest_date:
-                return self._empty_overview()
+                # DB 无数据但不影响指数展示
+                indices = self._fetch_index_data()
+                return {
+                    "indices": indices,
+                    "market_stats": {
+                        "up_count": 0, "down_count": 0, "flat_count": 0,
+                        "limit_up": 0, "limit_down": 0, "total_amount": None,
+                    },
+                    "updated_at": datetime.now(CN_TZ).isoformat(),
+                }
 
             prices = (
                 self.db.query(DailyPrice)
@@ -545,3 +549,112 @@ class PriceService:
             logger.exception("获取板块数据失败")
 
         return {"type": sector_type, "items": [], "updated_at": None}
+
+
+# ── 股本懒加载辅助函数 ──────────────────────────────
+
+
+def _fetch_shares_sina(symbol: str, market: str) -> tuple[float | None, float | None]:
+    """Sina 市场中心 → (总股本万股, 流通股本万股)。二分搜索定位。"""
+    import json, requests
+    headers = {"Referer": "https://finance.sina.com.cn"}
+    url = (
+        "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        "Market_Center.getHQNodeData"
+    )
+    node = "sh_a" if market == "sh" else "sz_a"
+
+    def _query_page(page: int) -> dict | None:
+        try:
+            r = requests.get(url,
+                params={"page": page, "num": 80, "sort": "symbol", "asc": 1, "node": node},
+                headers=headers, timeout=8)
+            items = json.loads(r.text)
+            if not items:
+                return None
+            for it in items:
+                if str(it.get("code", "")) == symbol:
+                    return it
+            return {"_first": items[0].get("code", ""), "_last": items[-1].get("code", "")}
+        except Exception:
+            return None
+
+    # 二分搜索，最多10次查询
+    lo, hi = 1, 50
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        result = _query_page(mid)
+        if result is None:
+            return None, None
+        if "mktcap" in result:  # 找到了
+            mktcap = result.get("mktcap")
+            nmc = result.get("nmc")
+            trade = float(result.get("trade", 0))
+            total = float(mktcap) if mktcap and trade > 0 else None
+            fl = float(nmc) if nmc and trade > 0 else None
+            if total and trade > 0:
+                total = total / trade
+            if fl and trade > 0:
+                fl = fl / trade
+            return total, fl
+        first = result["_first"]
+        last = result["_last"]
+        if first <= symbol <= last:
+            # 在当前页但没找到（可能不在本页的返回范围内）
+            return None, None
+        elif symbol < first:
+            hi = mid - 1
+        else:
+            lo = mid + 1
+
+    return None, None
+
+
+def _fetch_shares_em(symbol: str) -> tuple[float | None, float | None]:
+    """AKShare stock_individual_info_em。→ (总股本万股, 流通股万股)"""
+    import akshare as ak
+    df = ak.stock_individual_info_em(symbol=symbol)
+    info = {}
+    for _, row in df.iterrows():
+        info[str(row["item"]).strip()] = str(row["value"]).strip()
+    total = None
+    fl = None
+    if (cap := info.get("总股本")):
+        try:
+            total = float(cap.replace(",", "")) / 10000
+        except (ValueError, TypeError):
+            pass
+    if (float_s := info.get("流通股")):
+        try:
+            fl = float(float_s.replace(",", "")) / 10000
+        except (ValueError, TypeError):
+            pass
+    return total, fl
+
+
+def _fetch_shares_cninfo(symbol: str) -> tuple[float | None, float | None]:
+    """AKShare stock_profile_cninfo（备选）。"""
+    import akshare as ak
+    try:
+        df = ak.stock_profile_cninfo(symbol=symbol)
+        if df.empty:
+            return None, None
+        row = df.iloc[0]
+        cols = list(df.columns)
+        total = None
+        fl = None
+        for c in cols:
+            val = row.get(c) if hasattr(row, "get") else row[c]
+            if val and not total and "总股本" in str(c):
+                try:
+                    total = float(str(val).replace(",", "")) / 10000
+                except (ValueError, TypeError):
+                    pass
+            if val and not fl and "流通" in str(c) and "限售" not in str(c):
+                try:
+                    fl = float(str(val).replace(",", "")) / 10000
+                except (ValueError, TypeError):
+                    pass
+        return total, fl
+    except Exception:
+        return None, None

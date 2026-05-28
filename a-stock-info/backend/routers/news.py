@@ -9,7 +9,10 @@ from database import get_db
 from schemas.common import ApiResponse, PaginatedData, PaginationMeta
 from schemas.data import NewsItem
 from services.data_service import NewsService
-from services.news_pipeline import classify, hot_score, relevance_score, sentiment_score
+from services.news_pipeline import (
+    analyze_impact, classify, generate_summary, hot_score, is_breaking_news,
+    relevance_score, sentiment_score,
+)
 
 router = APIRouter(prefix="/news", tags=["news"])
 
@@ -40,23 +43,28 @@ def list_news(
         item["negative_matches"] = cls["negative_matches"]
         enriched.append(item)
 
-    # 过滤低质：相关性不足或热度为0的过滤
-    # 放宽过滤，保证至少20条
-    filtered = [
-        it for it in enriched
-        if it["relevance"] >= 0.01 or it["sentiment_label"] != "中性"
-    ]
-    filtered.sort(key=lambda x: x["hot_score"], reverse=True)
+    # 按热度排序，不做硬过滤（采集管线已做质量筛选）
+    enriched.sort(key=lambda x: x["hot_score"], reverse=True)
 
-    total_filtered = len(filtered)
+    total_items = total  # 使用 DB 真实总数，而非当前页截断数
     start = (page - 1) * page_size
-    paged = filtered[start : start + page_size]
-    pages = (total_filtered + page_size - 1) // page_size if total_filtered > 0 else 0
+    # DB 查询已分页，无需再切片
+    pages = (total_items + page_size - 1) // page_size if total_items > 0 else 0
+    for it in enriched:
+        impact = analyze_impact(it.get("title", ""), "", it.get("sentiment") or 0)
+        it.setdefault("summary", generate_summary(it.get("title", "")))
+        it.setdefault("impact_sectors", impact["impact_sectors"])
+        it.setdefault("impact_level", impact["impact_level"])
+        it.setdefault("investment_note", impact["investment_note"])
+        it.setdefault("is_breaking", is_breaking_news(
+            it.get("title", ""), it.get("sentiment") or 0, it.get("relevance", 0),
+        ))
+
     return ApiResponse(
         data=PaginatedData(
-            list=[NewsItem(**it) for it in paged],
+            list=[NewsItem(**it) for it in enriched],
             pagination=PaginationMeta(
-                total=total_filtered, page=page, page_size=page_size, pages=pages,
+                total=total_items, page=page, page_size=page_size, pages=pages,
             ),
         ),
         ts=int(time.time() * 1000),

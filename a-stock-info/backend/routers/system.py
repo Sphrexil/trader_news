@@ -1,5 +1,6 @@
 """系统状态路由。"""
 
+import logging
 import time
 
 from fastapi import APIRouter
@@ -12,6 +13,7 @@ from schemas.common import ApiResponse
 from schemas.system import JobInfo, SchedulerStatus, SystemStatus, TriggerResult
 from scheduler import scheduler
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/system", tags=["system"])
 settings = get_settings()
 cache = get_cache()
@@ -99,3 +101,55 @@ def trigger_job(job_id: str):
             data=TriggerResult(job_id=job_id, triggered=False, message=str(e)),
             ts=int(time.time() * 1000),
         )
+
+
+@router.post("/refresh", response_model=ApiResponse[dict])
+def force_refresh():
+    """强制刷新：清除缓存 + 拉取新闻 + 刷新大盘。无需调度器。"""
+    started_at = time.time()
+
+    # 1. 清除所有行情/新闻缓存
+    try:
+        for key in ["market:overview", "market:sectors", "ds:news", "ds:indices", "ds:sectors"]:
+            cache.delete(key)
+        # 清除实时行情缓存
+        cache.delete_pattern("rt:quote:")
+        cache.delete_pattern("ds:quote:")
+        logger.info("缓存已清除")
+    except Exception as e:
+        logger.warning(f"清除缓存失败: {e}")
+
+    results = {}
+
+    # 2. 新闻采集
+    try:
+        from crawlers.news import NewsCrawler
+        news_count = NewsCrawler().run()
+        results["news"] = f"已更新 {news_count} 条" if news_count > 0 else "新闻采集失败"
+    except Exception as e:
+        results["news"] = f"失败: {e}"
+
+    # 3. 刷新大盘概览缓存（强制重新获取指数）
+    try:
+        from services.price_service import PriceService
+        db = SessionLocal()
+        try:
+            svc = PriceService(db)
+            cache.delete("market:overview")
+            overview = svc.get_market_overview()
+            idx_count = len(overview.get("indices", []))
+            results["market"] = f"指数 {idx_count} 个已更新"
+        finally:
+            db.close()
+    except Exception as e:
+        results["market"] = f"失败: {e}"
+
+    elapsed = round(time.time() - started_at, 1)
+
+    return ApiResponse(
+        data={
+            "results": results,
+            "elapsed_seconds": elapsed,
+        },
+        ts=int(time.time() * 1000),
+    )

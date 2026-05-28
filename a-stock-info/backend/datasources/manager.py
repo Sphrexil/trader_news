@@ -16,6 +16,7 @@ from datasources.sina_source import SinaDataSource
 from datasources.baostock_source import BaoStockSource
 from datasources.akshare_source import AKShareSource
 from datasources.wallstreetcn_source import WallStreetCNSource
+from datasources.eastmoney_source import EastMoneySource
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class DataSourceManager:
     def __init__(self):
         self.sources: list[BaseDataSource] = [
             EasyQuotationSource(),
+            EastMoneySource(),
             SinaDataSource(),
             BaoStockSource(),
             AKShareSource(),
@@ -200,19 +202,40 @@ class DataSourceManager:
         return cleaned
 
     def get_news(self, ttl: int = 120) -> list[dict]:
-        """获取最新财经新闻（轮动数据源）。"""
+        """获取最新财经新闻（聚合所有可用数据源）。"""
         cache_key = "ds:news"
         cached = self._cache.get(cache_key)
         if cached:
             return cached
 
-        try:
-            result = self._try_sources("fetch_news")
-            if result:
-                self._cache.set(cache_key, result, ttl)
-            return result or []
-        except DataSourceError:
-            return []
+        all_news: list[dict] = []
+        seen_urls: set[str] = set()
+
+        for source in self.sources:
+            if not source.is_available():
+                continue
+            fn = getattr(source, "fetch_news", None)
+            if fn is None:
+                continue
+            try:
+                items = fn()
+                new_count = 0
+                for item in items:
+                    url = item.get("url", "")
+                    if url and url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    all_news.append(item)
+                    new_count += 1
+                logger.info(f"[{source.name}] fetch_news: {new_count} 条新消息")
+            except DataSourceError as e:
+                logger.warning(f"[{source.name}] fetch_news 失败: {e}")
+            except Exception as e:
+                logger.warning(f"[{source.name}] fetch_news 异常: {e}")
+
+        if all_news:
+            self._cache.set(cache_key, all_news, ttl)
+        return all_news
 
     def get_sectors(self, ttl: int = 180) -> list[dict]:
         """获取行业板块涨跌数据（带缓存）。"""

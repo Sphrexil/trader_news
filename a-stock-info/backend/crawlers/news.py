@@ -1,5 +1,6 @@
 """财经新闻采集器 — 轮动数据源 + 智能管线。"""
 
+import hashlib
 import logging
 from datetime import datetime
 
@@ -30,8 +31,8 @@ class NewsCrawler(BaseCrawler):
             logger.warning("所有新闻数据源均失败")
             return []
 
-        # 智能管线处理
-        processed = process(raw_news, top_n=30)
+        # 智能管线处理（聚合多源，保留更多政策/行业新闻）
+        processed = process(raw_news, top_n=80)
         logger.info("管线处理: %d → %d 条", len(raw_news), len(processed))
 
         records = []
@@ -47,13 +48,24 @@ class NewsCrawler(BaseCrawler):
             except (ValueError, TypeError):
                 dt = datetime.now()
 
+            url = n.get("url", "")
+            # 部分数据源不提供 URL，用 source+title 哈希生成唯一标识
+            if not url:
+                raw_uid = f"{n.get('source', '未知')}:{n.get('title', '')}"
+                url = f"hash://{hashlib.md5(raw_uid.encode()).hexdigest()[:12]}"
+
             records.append({
                 "source": n.get("source", "未知"),
                 "title": n.get("title", ""),
-                "url": n.get("url", ""),
+                "url": url,
                 "pub_time": dt.isoformat() if dt else datetime.now().isoformat(),
                 "related_codes": n.get("related_codes"),
                 "sentiment": n.get("sentiment"),
+                "summary": n.get("summary"),
+                "impact_sectors": n.get("impact_sectors"),
+                "impact_level": n.get("impact_level"),
+                "is_breaking": n.get("is_breaking", False),
+                "created_at": datetime.now().isoformat(),
             })
 
         return records

@@ -66,6 +66,11 @@ class NewsItem(BaseModel):
     hot_score: float = 0.0
     positive_matches: list[str] = []
     negative_matches: list[str] = []
+    summary: str | None = None
+    impact_sectors: str | None = None
+    impact_level: str | None = None
+    investment_note: str | None = None
+    is_breaking: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -165,6 +165,11 @@ export interface NewsItem {
   hot_score: number;
   positive_matches: string[];
   negative_matches: string[];
+  summary: string | null;
+  impact_sectors: string | null;
+  impact_level: string | null;
+  investment_note: string | null;
+  is_breaking: boolean;
 }
 
 // ── 自选股 ───────────────────────────────────────────
